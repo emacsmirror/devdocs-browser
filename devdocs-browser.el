@@ -317,11 +317,10 @@ Can be used as `imenu-create-index-function'."
               (url (concat devdocs-browser-base-url slug "/" path)))
     (browse-url-default-browser url)))
 
-(defun devdocs-browser--eww-recenter-advice (res)
-  "Recenter current cursor for devdocs buffer, used for advice :filter-return (return `RES')."
+(defun devdocs-browser--eww-recenter-after-render ()
+  "Recenter current cursor for devdocs buffer, used after eww finishes rendering."
   (when devdocs-browser--eww-data
-    (recenter))
-  res)
+    (recenter)))
 
 (defun devdocs-browser--eww-browse-url-new-window-advice (args)
   "Advice around `eww-browse-url' with ARGS, set NEW-WINDOW if URL is external."
@@ -354,8 +353,8 @@ Can be used as `imenu-create-index-function'."
               #'devdocs-browser--imenu-create-index)
   (when (boundp 'eww-auto-rename-buffer)
     (setq-local eww-auto-rename-buffer nil))
-  (advice-add 'eww-display-html :filter-return #'devdocs-browser--eww-recenter-advice)
   (advice-add 'eww-browse-url :filter-args #'devdocs-browser--eww-browse-url-new-window-advice)
+  (add-hook 'eww-after-render-hook #'devdocs-browser--eww-recenter-after-render nil t)
   (add-hook 'eldoc-documentation-functions #'devdocs-browser--eww-link-eldoc nil t)
   (eldoc-mode))
 
