@@ -214,24 +214,28 @@ See https://prismjs.com/ for list of language names."
 (defvar-local devdocs-browser--eww-data '()
   "Plist data for current eww page, contain :doc and :path.")
 
-(defun devdocs-browser--eww-fix-url (url)
-  "Fix links' URL in docs by appending suffix and mtime."
-  ;; shr-expand-url may be call in a temp buffer
-  ;; we need to temporary bind this buffer to access the buffer-local variable.
-  (with-current-buffer (window-buffer)
-    (let ((url-parsed (url-generic-parse-url url))
-          (root-url-parsed (url-generic-parse-url (plist-get eww-data :url)))
-          (mtime (plist-get (plist-get devdocs-browser--eww-data :doc) :mtime)))
-      (when (and mtime
-                 (equal (url-type url-parsed) (url-type root-url-parsed))
-                 (equal (url-host url-parsed) (url-host root-url-parsed))
-                 (not (string-match-p "\\.html" url)))
-        (setf (url-filename url-parsed)
-              (if (equal (url-type url-parsed) "file")
-                  (concat (url-filename url-parsed) ".html")
-                (format "%s.html?%s" (url-filename url-parsed) mtime)))
-        (setq url (url-recreate-url url-parsed)))))
-  url)
+(defun devdocs-browser--eww-tag-a (dom)
+  "Rendering function for <a> DOM.
+It fixes the href url and then call shr render function."
+  (when-let* ((url (dom-attr dom 'href)))
+    ;; this may be call in a temp buffer
+    ;; we need to temporary bind this buffer to access the buffer-local variable.
+    (with-current-buffer (window-buffer)
+      (setq url (shr-expand-url url))
+      (let ((url-parsed (url-generic-parse-url url))
+            (root-url-parsed (url-generic-parse-url (plist-get eww-data :url)))
+            (mtime (plist-get (plist-get devdocs-browser--eww-data :doc) :mtime)))
+        (when (and mtime
+                   (equal (url-type url-parsed) (url-type root-url-parsed))
+                   (equal (url-host url-parsed) (url-host root-url-parsed))
+                   (not (string-match-p "\\.html" url)))
+          (setf (url-filename url-parsed)
+                (if (equal (url-type url-parsed) "file")
+                    (concat (url-filename url-parsed) ".html")
+                  (format "%s.html?%s" (url-filename url-parsed) mtime)))
+          (setq url (url-recreate-url url-parsed)))))
+    (dom-set-attribute dom 'href url))
+  (shr-tag-a dom))
 
 (defun devdocs-browser--eww-parse-url-path (url)
   "Return URL's doc :path ('hello/world#target')."
@@ -339,6 +343,7 @@ Can be used as `imenu-create-index-function'."
   (setq-local shr-external-rendering-functions
               (append shr-external-rendering-functions
                       '((pre . devdocs-browser--eww-tag-pre)
+                        (a . devdocs-browser--eww-tag-a)
                         (summary . devdocs-browser--eww-tag-generic-ensure-paragraph)
                         (section . devdocs-browser--eww-tag-generic-ensure-paragraph))
                       (mapcar (lambda (level)
@@ -349,7 +354,6 @@ Can be used as `imenu-create-index-function'."
               #'devdocs-browser--imenu-create-index)
   (when (boundp 'eww-auto-rename-buffer)
     (setq-local eww-auto-rename-buffer nil))
-  (advice-add 'shr-expand-url :filter-return #'devdocs-browser--eww-fix-url)
   (advice-add 'eww-display-html :filter-return #'devdocs-browser--eww-recenter-advice)
   (advice-add 'eww-browse-url :filter-args #'devdocs-browser--eww-browse-url-new-window-advice)
   (add-hook 'eldoc-documentation-functions #'devdocs-browser--eww-link-eldoc nil t)
