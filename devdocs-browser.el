@@ -214,6 +214,22 @@ See https://prismjs.com/ for list of language names."
 (defvar-local devdocs-browser--eww-data '()
   "Plist data for current eww page, contain :doc and :path.")
 
+(defun devdocs-browser--follow-link ()
+  "Follow url at point.
+similar to `eww-follow-link', but set external to t if
+it points to non-devdocs url."
+  (interactive)
+  (when-let* ((url (get-text-property (point) 'shr-url)))
+    (eww-follow-link
+     ;; external?
+     (and devdocs-browser--eww-data
+          (not (devdocs-browser--eww-parse-url-path url))))))
+
+(defvar-keymap devdocs-browser--link-keymap  ;; similar to eww-link-map
+  :parent shr-map
+  "RET" #'devdocs-browser--follow-link
+  "<mouse-2>" #'devdocs-browser--follow-link)
+
 (defun devdocs-browser--eww-tag-a (dom)
   "Rendering function for <a> DOM.
 It fixes the href url and then call shr render function."
@@ -235,7 +251,10 @@ It fixes the href url and then call shr render function."
                   (format "%s.html?%s" (url-filename url-parsed) mtime)))
           (setq url (url-recreate-url url-parsed)))))
     (dom-set-attribute dom 'href url))
-  (shr-tag-a dom))
+  (let ((start (point)))
+    (shr-tag-a dom)
+    (when (dom-attr dom 'href)
+      (put-text-property start (point) 'keymap devdocs-browser--link-keymap))))
 
 (defun devdocs-browser--eww-parse-url-path (url)
   "Return URL's doc :path ('hello/world#target')."
@@ -322,15 +341,6 @@ Can be used as `imenu-create-index-function'."
   (when devdocs-browser--eww-data
     (recenter)))
 
-(defun devdocs-browser--eww-browse-url-new-window-advice (args)
-  "Advice around `eww-browse-url' with ARGS, set NEW-WINDOW if URL is external."
-  (let ((url (car args))
-        (new-window (cadr args)))
-    (when (and devdocs-browser--eww-data
-               (not (devdocs-browser--eww-parse-url-path url)))
-      (setq new-window t))
-    (list url new-window)))
-
 (define-minor-mode devdocs-browser-eww-mode
   "Minor mode for browsing devdocs pages with eww."
   :lighter " Devdocs"
@@ -353,7 +363,6 @@ Can be used as `imenu-create-index-function'."
               #'devdocs-browser--imenu-create-index)
   (when (boundp 'eww-auto-rename-buffer)
     (setq-local eww-auto-rename-buffer nil))
-  (advice-add 'eww-browse-url :filter-args #'devdocs-browser--eww-browse-url-new-window-advice)
   (add-hook 'eww-after-render-hook #'devdocs-browser--eww-recenter-after-render nil t)
   (add-hook 'eldoc-documentation-functions #'devdocs-browser--eww-link-eldoc nil t)
   (eldoc-mode))
